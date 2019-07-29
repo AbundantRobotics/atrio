@@ -8,14 +8,18 @@ from pathlib import Path
 import yaml
 
 
-trace = False
-
 program_types = {
     ".BAS": 0,
     ".TXT": 3,
     ".MCC": 9,
     ".BAL": 12,
 }
+
+
+def extension_from_prog_type(prog_type):
+    """ Returns file extension from a trio prog_type """
+    return next(k for (k, v) in program_types.items() if v == prog_type)
+
 
 code_types = {
     "Normal": ".BAS",
@@ -24,6 +28,11 @@ code_types = {
     "MC_CONFIG": ".MCC"
 }
 
+
+def extension_from_code_type(code_type):
+    return code_types[code_type]
+
+
 autorun_types = {
     "None": False,
     "Manual": False,
@@ -31,38 +40,49 @@ autorun_types = {
     "Auto\((?P<autorun>[\-\d]+)\)": True
 }
 
-progtable_regex = re.compile(
-    "^(?P<progname>[^\s]+)\s+(?P<source>\d+)\s+(?P<code>\d+)"
-    "\s+({})"
-    "\s+(?P<codetype>{})".format(
-        "|".join(autorun_types.keys()),
-        "|".join(code_types.keys())
+
+progtable_regex = \
+    re.compile(
+        "^(?P<progname>[^\s]+)\s+(?P<source>\d+)\s+(?P<code>\d+)"
+        "\s+({})"
+        "\s+(?P<codetype>{})"
+        .format(
+            "|".join(autorun_types.keys()),
+            "|".join(code_types.keys())
         ),
-    re.MULTILINE
+        re.MULTILINE
     )
 
 
-def program_from_filename(filename):
+def prettyprint_progtable(list_files):
+    for k in list_files.values():
+        autorun = k.get('autorun', None)
+        if autorun:
+            autorunstr = " ({})".format(autorun)
+        else:
+            autorunstr = ""
+        print("{}{}{}".format(
+            k['progname'],
+            extension_from_code_type(k['codetype']),
+            autorunstr)
+        )
+
+
+def program_from_filename(filename, allow_progname=False):
     """ Returns the trio filename and associated prog_type """
-    filename.upper()
     p = Path(filename)
-    extension = p.suffix
+    extension = p.suffix.upper()
     t = program_types.get(extension)
-    if t is None:
+    if not allow_progname and t is None:
         raise Exception("File {} extension is unknown".format(filename))
-    return p.stem, t
+    return p.stem.upper(), t
 
 
-def extension_from_prog_type(prog_type):
-    """ Returns file extension from a trio prog_type """
-    return next(k for (k, v) in program_types.items() if v == prog_type)
-
-def extension_from_code_type(code_type):
-    return code_types[code_type]
 
 
 import crcmod
 trioCRC16 = crcmod.Crc(0x18005, initCrc=0, rev=False, xorOut=0)
+
 
 def crc_lines(lines):
     """ Expect a list of lines with no endings """
@@ -72,9 +92,11 @@ def crc_lines(lines):
         crc.update(b'\xaa')
     return crc.crcValue
 
+
 def crc_file(filename):
     with open(filename, 'rb') as f:
         return crc_lines(f.readlines())
+
 
 class Trio:
     """
@@ -83,7 +105,7 @@ class Trio:
     or can be used in a contextmanager (`with`)
     """
 
-    def __init__(self, ip):
+    def __init__(self, ip, trace=False):
         try:
             t = telnetlib.Telnet(ip, timeout=1)
         except socket.timeout:
@@ -93,6 +115,7 @@ class Trio:
         self.t = t
         self.ip = ip
         self.name = ip
+        self.trace = trace
         atexit.register(Trio.__del__, self)
 
         # flush the starting stuff
@@ -112,17 +135,17 @@ class Trio:
             self.t.close()
         return False
 
-    def command(self, cmd, timeout=5):
+    def command(self, cmd, timeout=30):
         cmd = cmd.encode('ascii')
         self.t.read_very_eager() # try to recover from past errors
         self.t.write(cmd + b'\r\n')
-        if trace:
-            print(cmd + b'\r\n')
+        if self.trace:
+            print('-> ', cmd + b'\r\n')
 
         end_re = re.compile(b"Control char : (.*)\r\n>>", re.MULTILINE)
         (_, _, answer) = self.t.expect([end_re], timeout)
-        if trace:
-            print(answer)
+        if self.trace:
+            print('<- ', answer)
         if not answer:
             raise Exception("Trio {} (cmd: {}) doesn't respond".format(self.name, repr(cmd)))
         resp = b'(.*?)\r\n(.*)>>\nControl char : (.*)\r\n>>'
@@ -136,15 +159,25 @@ class Trio:
             raise Exception("Command Error {}".format(err.group(1)))
         if r.group(3) != b'0x10000000A':
             raise Exception("Trio {} (cmd: {}) bad return code: {}".format(self.name, repr(cmd), r.group(3)))
-        return r.group(2).strip(b'\r\n')
+        return re.sub(b'\r\n$', b'', r.group(2))  # Remove ending \r\n if answer is not empty
 
-    def commandI(self, cmd, timeout=5):
+    def commandI(self, cmd, timeout=30):
         return int(self.command(cmd, timeout))
 
-    def commandS(self, cmd, timeout=5):
+    def commandS(self, cmd, timeout=30):
         """ Execute command and return the result as a string. """
         s = self.command(cmd, timeout).decode().replace('\r\n', '\n')
         return s
+
+    def restart(self):
+        try:
+            self.command('EX', timeout=1)
+        except Exception as e:
+            if re.match(r'.*EX\\r\\nOK\\xb0>>', str(e.args[0])):
+                print("Restarting... wait time is about 15sec")
+                return
+            else:
+                raise
 
     def quote(self, s):
         """ Trio quoting is using \" and "" is quote of \" """
@@ -221,8 +254,10 @@ class Trio:
     def checksum_program(self, progname):
         return self.commandI("EDPROG{},10".format(self.quote(progname)))
 
-    def autorun_program(self, progname, process):
+    def autorun_program(self, progname, prog_type, process):
         """ Process -1 is automatic process selection, None removes the autorun"""
+        if prog_type != 0:
+            return  # Only programs are autorunable, trio will fail to set no autorun on non autorunable...
         prog = self.quote(progname)
         autorun = process is not None
         if autorun:
@@ -243,6 +278,7 @@ class Workspace:
     def __init__(self, trio):
         self.trio = trio
         self.ws = None
+        self.wsfiledir = Path()
 
     def save(self, wsfile):
         with open(wsfile, 'w') as f:
@@ -251,6 +287,7 @@ class Workspace:
     def load(self, wsfile):
         with open(wsfile) as f:
             self.ws = yaml.load(f)
+            self.wsfiledir = Path(wsfile).parent
 
     def entry_from_list_file(self, folder, ll):
         """ Workspace entry from a file listing entry from trio.list_files() """
@@ -266,7 +303,7 @@ class Workspace:
             'files': files
         }
 
-    def new_from_controller(self, wsfile, folder=None, delete=False):
+    def new_from_controller(self, wsfile, folder=None):
         """ Create a workspace from the controller content.
         Save the workspace file as wsfile, and the programs in folder.
         If folder is not given, puts the programs in the same folder as the workspace.
@@ -276,11 +313,7 @@ class Workspace:
             d = Path(wsfile).parent
         else:
             d = Path(folder)
-        if d.exists():
-            if delete:
-                import shutil
-                shutil.rmtree(d)
-        else:
+        if not d.exists():
             d.mkdir(parents=True)
 
         d = d.relative_to(Path(wsfile).parent)
@@ -347,25 +380,26 @@ class Workspace:
         self.save(wsfile)
 
 
-
-    def write_to_controller(self, delete=False):
+    def write_to_controller(self, clear=False):
         """ Write the current workspace to the controller.
-        If delete, it will ensure the controller has nothing extra.
+        If clear, it will clear everything in the controller before uploading.
         """
         if self.ws is None:
             raise Exception("Trying to write empty workspace to controller.")
         self.trio.command("HALT")  # Trio will fail when there are running progs and we write some
-        if delete:
+        if clear:
             for f in self.trio.list_files():
                 self.trio.delete_program(f)
 
         for f in self.ws.get('files', []):
-            filename = f['filename']
+            filename = self.wsfiledir / f['filename']
             if not self.check_controller_filecontent(filename):
-                print("Uploading ()".format(filename))
+                print("Updating {}".format(filename))
                 self.trio.upload_file(filename)
                 progname, prog_type = program_from_filename(filename)
-                self.trio.autorun_program(progname, f.get('autorun', None))
+                self.trio.autorun_program(progname, prog_type, f.get('autorun', None))
+                if prog_type == program_types['.MCC']:
+                    print("MC_CONFIG.MCC got update, you will need to restart the controller")
 
 
     def check_controller_filecontent(self, filename):
@@ -383,25 +417,26 @@ class Workspace:
         if self.ws is None:
             raise Exception("Workspace is empty, please load a workspace.")
 
-        r = True
+        r = False
 
         cfiles = self.trio.list_files()
         extras = set(cfiles.keys())
 
         for f in self.ws.get('files', []):
-            progname, prog_type = program_from_filename(f['filename'])
+            filename = self.wsfiledir / f['filename']
+            progname, prog_type = program_from_filename(filename)
             if progname not in cfiles:
                 print("File {} is missing in the controller".format(progname))
-                r = False
+                r = True
             else:
                 ll = cfiles[progname]
                 cprog_type = program_types.get(extension_from_code_type(ll['codetype']))
                 if prog_type != cprog_type:
                     print("File {} is of wrong type in the controller".format(progname))
-                    r = False
-                if not self.check_controller_filecontent(f['filename']):
+                    r = True
+                if not self.check_controller_filecontent(filename):
                     print("File {} content is different in the controller".format(progname))
-                    r = False
+                    r = True
                 if str(ll['autorun']) != str(f.get('autorun', None)):
                     print("File {} autorun state is different in the controller".format(progname))
                 extras.remove(progname)
@@ -409,11 +444,11 @@ class Workspace:
         if extras:
             print("Extra files are in the controller ({})".format(', '.join(extras)))
             if check_extra:
-                r = False
+                r = True
 
         return r
 
     def download_all(self):
         for f in self.ws.get('files', []):
-            self.trio.download_file(f['filename'])
+            self.trio.download_file(self.wsfiledir / f['filename'])
 
