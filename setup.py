@@ -16,6 +16,7 @@ setuptools.setup(
     install_requires=[
         "argcomplete",
         "pyyaml",
+        "crcmod",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
