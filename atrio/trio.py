@@ -172,7 +172,7 @@ class Trio:
         try:
             self.command('EX', timeout=1)
         except Exception as e:
-            if re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\nOKH>>'", str(e.args[0])):
+            if re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\nOK.*'", str(e.args[0])):
                 print("Restarting... wait time is about 15sec")
                 return
             else:
