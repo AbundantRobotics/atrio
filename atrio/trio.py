@@ -285,7 +285,7 @@ class Workspace:
 
     def load(self, wsfile):
         with open(wsfile) as f:
-            self.ws = yaml.load(f)
+            self.ws = yaml.load(f, Loader=yaml.Loader)
             self.wsfiledir = Path(wsfile).parent
 
     def entry_from_list_file(self, folder, ll):
