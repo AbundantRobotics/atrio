@@ -217,7 +217,7 @@ class Trio:
             progname.upper()
             r_prog_type = self.commandI("?PROG_TYPE \"{}\"".format(progname))
             filename = Path(filename).parent / (progname + extension_from_prog_type(r_prog_type))
-        with open(filename, 'w') as f:
+        with open(filename, 'w', newline='\r\n') as f:
             f.write(self.read_program(progname) + '\n')
 
     def upload_file(self, filename):
