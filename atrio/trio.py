@@ -178,6 +178,12 @@ class Trio:
             else:
                 raise
 
+    def halt(self):
+        try:
+            self.command("HALT", timeout=0.5)
+        except Exception as e:
+            pass # We do not really know what to do if there are process printing to channel #0 ...
+
     def quote(self, s):
         """ Trio quoting is using \" and "" is quote of \" """
         return '"{}"'.format(s.replace('"', '""'))
@@ -385,7 +391,7 @@ class Workspace:
         """
         if self.ws is None:
             raise Exception("Trying to write empty workspace to controller.")
-        self.trio.command("HALT")  # Trio will fail when there are running progs and we write some
+        self.trio.halt()  # Trio will fail when there are running progs and we write some
         if clear:
             for f in self.trio.list_files():
                 self.trio.delete_program(f)

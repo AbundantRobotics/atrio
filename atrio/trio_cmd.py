@@ -36,6 +36,11 @@ def controller_restart(args):
     return t.restart()
 
 
+def controller_halt(args):
+    t = construct_trio(args)
+    return t.halt()
+
+
 def ws_create(args):
     ws = construct_workspace(args)
     return ws.new_from_controller(args.wsfile, args.folder)
@@ -113,6 +118,8 @@ def main():
     restart_parser = subparsers.add_parser('restart', help="Restart the controller (special call to EX)")
     restart_parser.set_defaults(func=controller_restart)
 
+    halt_parser = subparsers.add_parser('halt', help="Halt programs in the controller ensuring communication channel is clean")
+    halt_parser.set_defaults(func=controller_halt)
 
     # `ws` subcommand
 
