@@ -334,7 +334,7 @@ class Workspace:
         """ Update the programs of the workspace """
         if interactive:
             def prompt(msg):
-                r = input(msg + " Y/n?")
+                r = input(msg + " Y/n?\n")
                 return (r == '' or r == 'Y' or r == 'y')
         else:
             def prompt(msg):
@@ -353,14 +353,14 @@ class Workspace:
             autorun = f.get('autorun', None)
 
             if progname not in cfiles:
-                print('File removed from the controller.')
-                if prompt('Removing it from workspace'):
+                print('File {} removed from the controller.'.format(filename))
+                if prompt('Remove from workspace'):
                     Path(filename).unlink()
                 continue
 
             if not self.check_controller_filecontent(filename):
                 print('File {} is different'.format(filename))
-                if prompt("Downloading form controller"):
+                if prompt("Download form controller"):
                     self.trio.download_file(filename)
 
             if str(cfiles[progname]['autorun']) != str(autorun):
@@ -372,8 +372,7 @@ class Workspace:
             cfiles.pop(progname)
 
         if cfiles:
-            print("Extra files are in the controller")
-            if prompt("Downloading them"):
+            if prompt("Download extra files from controller"):
                 for cf in cfiles.values():
                     new_file = self.entry_from_list_file('.', cf)
                     if prompt("Downloading new file {}".format(cf['progname'])):
