@@ -62,6 +62,10 @@ def ws_from_controller(args):
     ws = construct_workspace(args)
     return ws.new_from_controller(args.wsfile, folder=args.folder, delete=args.delete)
 
+def ws_download(args):
+    ws = construct_workspace(args)
+    return ws.update_from_controller(args.wsfile, interactive=True)
+
 
 """
 ---
@@ -144,6 +148,9 @@ def main():
     ws_upload_parser.add_argument('--clear', action="store_true",
                                   help="Start from scratch removing everything in the controller first")
     ws_upload_parser.set_defaults(func=ws_upload)
+
+    ws_download_parser = ws_sub_parsers.add_parser('download', help="Download changes from the controller")
+    ws_download_parser.set_defaults(func=ws_download)
 
 
 
