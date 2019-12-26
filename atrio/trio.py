@@ -104,7 +104,15 @@ class Trio:
     or can be used in a contextmanager (`with`)
     """
 
-    def __init__(self, ip, trace=False):
+    def connect(self, timeout=1):
+        self.t.close()
+        self.t.open(self.ip, timeout=timeout)
+        # flush the starting stuff
+        self.t.write(b'\r\n\r\n')
+        while self.t.read_until(b'>>', 0.1):
+            pass
+
+    def __init__(self, ip, trace : bool=False):
         try:
             t = telnetlib.Telnet(ip, timeout=1)
         except socket.timeout:
@@ -116,11 +124,7 @@ class Trio:
         self.name = ip
         self.trace = trace
         atexit.register(Trio.__del__, self)
-
-        # flush the starting stuff
-        self.t.write(b'\r\n\r\n')
-        while self.t.read_until(b'>>', 0.1):
-            pass
+        self.connect(timeout=1)
 
     def __del__(self):
         if 't' in self.__dict__:
@@ -134,7 +138,7 @@ class Trio:
             self.t.close()
         return False
 
-    def command(self, cmd, timeout=30):
+    def command(self, cmd : str, timeout : float=30):
         cmd = cmd.encode('ascii')
         self.t.read_very_eager() # try to recover from past errors
         self.t.write(cmd + b'\r\n')
@@ -172,11 +176,11 @@ class Trio:
         try:
             self.command('EX', timeout=1)
         except Exception as e:
-            if re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\nOK.*'", str(e.args[0])):
-                print("Restarting... wait time is about 15sec")
-                return
-            else:
+            if not re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\nOK.*'", str(e.args[0])):
                 raise
+        print("Restarting... May take up to 30sec")
+        self.connect(timeout=60)
+        print("Restarted")
 
     def halt(self):
         try:
@@ -197,7 +201,7 @@ class Trio:
         for (n, l) in enumerate(lines):
             self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
         if compile:
-            self.commandS("COMPILE", 60)
+            print(self.commandS("COMPILE", 60))
 
 
     def delete_program(self, progname):
@@ -226,10 +230,10 @@ class Trio:
         with open(filename, 'w', newline='\r\n') as f:
             f.write(self.read_program(progname) + '\n')
 
-    def upload_file(self, filename):
+    def upload_file(self, filename, compile=True):
         progname, prog_type = program_from_filename(filename)
         with open(filename, 'r') as f:
-            self.write_program(progname, prog_type, f)
+            self.write_program(progname, prog_type, f, compile=compile)
 
     def list_files(self):
         dirlist = self.commandS("DIR")
@@ -403,7 +407,8 @@ class Workspace:
                 progname, prog_type = program_from_filename(filename)
                 self.trio.autorun_program(progname, prog_type, f.get('autorun', None))
                 if prog_type == program_types['.MCC']:
-                    print("MC_CONFIG.MCC got update, you will need to restart the controller")
+                    print("MC_CONFIG.MCC got updated, restarting the controller")
+                    self.trio.restart()
 
 
     def check_controller_filecontent(self, filename):
