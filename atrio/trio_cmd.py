@@ -58,46 +58,10 @@ def ws_upload(args):
     return ws.write_to_controller(args.clear)
 
 
-def ws_from_controller(args):
-    ws = construct_workspace(args)
-    return ws.new_from_controller(args.wsfile, folder=args.folder, delete=args.delete)
-
 def ws_download(args):
     ws = construct_workspace(args)
     return ws.update_from_controller(args.wsfile, interactive=True)
 
-
-"""
----
-atrio --ip <controllerIP> [--trace] <subcommand>
-
-atrio cmd <trio cmd>
-atrio list
-atrio show <prog>
-
-
-- bonus :
-atrio download <prog> [<file>]
-atrio download --all
-
-atrio upload <file> [<file> [...]]
-atrio autorun <prog> <proc>
-
-atrio ethercat ....
-
-
----
-
-atrio ws create <wsfile> [--folder=<folder>] [--delete]
-atrio ws check <wsfile> [--check_extra]
-atrio ws upload <wsfile> [--delete]
-
-- bonus :
-atrio ws download --delete=false
-atrio ws sync --interactive=true
-
-
-"""
 
 
 def main():
@@ -105,6 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description="Trio controller management tool")
     parser.add_argument('--ip', type=str, help="Controller IP/hostname")
     parser.add_argument('--trace', action='store_true', help="Enable tracing of all interaction with the controller.")
+    parser.add_argument('--folder', help="Folder in which to create files, default same as wsfile")
 
     subparsers = parser.add_subparsers()
 
@@ -133,16 +98,12 @@ def main():
     ws_sub_parsers = ws_parser.add_subparsers()
 
     ws_create_parser = ws_sub_parsers.add_parser('create', help="Create a workspace from the controller")
-    ws_create_parser.add_argument('--folder', default=None,
-                                  help="Folder in which to create the workspace, default same as wsfile")
     ws_create_parser.set_defaults(func=ws_create)
-
 
     ws_check_parser = ws_sub_parsers.add_parser('check', help="Check workspace is in sync with the controller")
     ws_check_parser.add_argument('--check_extra', action="store_true",
                                  help="Check for extra files in the controller")
     ws_check_parser.set_defaults(func=ws_check)
-
 
     ws_upload_parser = ws_sub_parsers.add_parser('upload', help="Upload workspace to the controller")
     ws_upload_parser.add_argument('--clear', action="store_true",
@@ -151,15 +112,6 @@ def main():
 
     ws_download_parser = ws_sub_parsers.add_parser('download', help="Download changes from the controller")
     ws_download_parser.set_defaults(func=ws_download)
-
-
-
-
-    # ws_parser.add_argument('--folder', default=None, help="Folder in which to create the workspace, default cwd")
-    
-    # ws_parser.add_argument('--delete', action='store_true', help="Delete extra files in the local folder")
-    # ws_parser.set_defaults(func=ws_from_controller)
-
 
 
     argcomplete.autocomplete(parser)
