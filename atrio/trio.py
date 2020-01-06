@@ -105,7 +105,10 @@ class Trio:
     """
 
     def connect(self, timeout=1):
-        self.t.close()
+        if self.t:
+            self.t.close()
+        else:
+            self.t = telnetlib.Telnet()
         self.t.open(self.ip, timeout=timeout)
         # flush the starting stuff
         self.t.write(b'\r\n\r\n')
@@ -113,13 +116,7 @@ class Trio:
             pass
 
     def __init__(self, ip, trace : bool=False):
-        try:
-            t = telnetlib.Telnet(ip, timeout=1)
-        except socket.timeout:
-            t = None
-        if not t:
-            raise Exception("Could not connect to " + ip + ", verify that nothing is already connected to it.")
-        self.t = t
+        self.t = None
         self.ip = ip
         self.name = ip
         self.trace = trace
