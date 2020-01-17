@@ -192,13 +192,16 @@ class Trio:
     def read_program(self, progname):
         return self.commandS("LIST \"{}\"".format(progname))
 
-    def write_program(self, progname, prog_type, lines, compile=True):
+    def write_program(self, progname, prog_type, lines):
         self.delete_program(progname)
         self.command("SELECT {},{}".format(self.quote(progname), prog_type))
         for (n, l) in enumerate(lines):
             self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
-        if compile:
-            print(self.commandS("COMPILE", 60))
+        try:
+            self.commandS("COMPILE", 60) # Compiling is needed to not have strange failures with communication to trio
+        except Exception as e:
+            e.args = ("Error compiling {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
+            raise
 
 
     def delete_program(self, progname):
@@ -227,10 +230,10 @@ class Trio:
         with open(filename, 'w', newline='\r\n') as f:
             f.write(self.read_program(progname) + '\n')
 
-    def upload_file(self, filename, compile=True):
+    def upload_file(self, filename):
         progname, prog_type = program_from_filename(filename)
         with open(filename, 'r') as f:
-            self.write_program(progname, prog_type, f, compile=compile)
+            self.write_program(progname, prog_type, f)
 
     def list_files(self):
         dirlist = self.commandS("DIR")
@@ -254,7 +257,7 @@ class Trio:
                 self.upload_file(str(f))
 
     def checksum_controller(self):
-        self.command("COMPILE_ALL", 120)
+        print(self.commandS("COMPILE_ALL", 120))
         return self.commandI("?CHECKSUM")
 
     def checksum_program(self, progname):
