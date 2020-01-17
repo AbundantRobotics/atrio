@@ -67,7 +67,10 @@ def ws_download(args):
 def main():
 
     parser = argparse.ArgumentParser(description="Trio controller management tool")
+    parser.add_argument('--drives_file', '-d', type=str,
+                        help="A yaml file with each controller descriptions with field 'ip'")
     parser.add_argument('--ip', type=str, help="Controller IP/hostname")
+
     parser.add_argument('--trace', action='store_true', help="Enable tracing of all interaction with the controller.")
     parser.add_argument('--folder', help="Folder in which to create files, default same as wsfile")
 
