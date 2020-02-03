@@ -111,9 +111,14 @@ class Trio:
             self.t = telnetlib.Telnet()
         self.t.open(self.ip, timeout=timeout)
         # flush the starting stuff
-        self.t.write(b'\r\n\r\n')
-        while self.t.read_until(b'>>', 0.1):
-            pass
+        success = False
+        while not success:
+            try:
+                success = self.commandS('?987654321') == '987654321'
+            except:
+                pass
+            if not success:
+                print("Extra telnet output found, trying to clear it")
 
     def __init__(self, ip, trace : bool=False):
         self.t = None
