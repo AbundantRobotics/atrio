@@ -202,6 +202,7 @@ class Trio:
         self.command("SELECT {},{}".format(self.quote(progname), prog_type))
         for (n, l) in enumerate(lines):
             self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
+        self.commandS("EDPROG{},14".format(self.quote(progname))) # save to flash
         try:
             self.commandS("COMPILE", 60) # Compiling is needed to not have strange failures with communication to trio
         except Exception as e:
