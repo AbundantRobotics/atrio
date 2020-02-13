@@ -203,15 +203,16 @@ class Trio:
         self.command("SELECT {},{}".format(self.quote(progname), prog_type))
         for (n, l) in enumerate(lines):
             self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
-        self.commandS("EDPROG{},14".format(self.quote(progname))) # save to flash
+        self.command("&M")
+        self.command("!{},z".format(progname))
         try:
             self.commandS("COMPILE", 60) # Compiling is needed to not have strange failures with communication to trio
         except Exception as e:
             e.args = ("Error compiling {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
             raise
-        while self.commandI("?FLASH_STATUS"):
-            print("Waiting for flash memory")
-            time.sleep(0.05)
+        #while self.commandI("?FLASH_STATUS"):
+        #    print("Waiting for flash memory")
+        #    time.sleep(0.05)
 
 
     def delete_program(self, progname):
