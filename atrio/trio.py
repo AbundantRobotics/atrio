@@ -208,6 +208,8 @@ class Trio:
         except Exception as e:
             e.args = ("Error compiling {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
             raise
+        while self.commandI("?FLASH_STATUS"):
+            pass
 
 
     def delete_program(self, progname):
