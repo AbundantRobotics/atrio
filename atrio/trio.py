@@ -179,7 +179,7 @@ class Trio:
         try:
             self.command('EX', timeout=1)
         except Exception as e:
-            if not re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\nOK.*'", str(e.args[0])):
+            if not re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\n.*'", str(e.args[0])):
                 raise
         print("Restarting... May take up to 30sec")
         self.connect(timeout=60)
