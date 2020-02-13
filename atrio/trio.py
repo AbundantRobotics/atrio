@@ -406,8 +406,9 @@ class Workspace:
             raise Exception("Trying to write empty workspace to controller.")
         self.trio.halt()  # Trio will fail when there are running progs and we write some
         if clear:
-            for f in self.trio.list_files():
-                self.trio.delete_program(f)
+            self.trio.commandS('NEW "ALL"')
+            #for f in self.trio.list_files():
+            #    self.trio.delete_program(f)
 
         for f in self.ws.get('files', []):
             filename = self.wsfiledir / f['filename']
