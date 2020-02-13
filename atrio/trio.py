@@ -2,6 +2,7 @@ import re
 import telnetlib
 import socket
 import atexit
+import time
 from pathlib import Path
 
 import yaml
@@ -209,7 +210,8 @@ class Trio:
             e.args = ("Error compiling {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
             raise
         while self.commandI("?FLASH_STATUS"):
-            pass
+            print("Waiting for flash memory")
+            time.sleep(0.05)
 
 
     def delete_program(self, progname):
