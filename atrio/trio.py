@@ -3,6 +3,8 @@ import telnetlib
 import socket
 import atexit
 import time
+import random
+random.seed()
 from pathlib import Path
 
 import yaml
@@ -111,12 +113,13 @@ class Trio:
         else:
             self.t = telnetlib.Telnet(timeout=timeout)
         self.t.open(self.ip, timeout=timeout)
-        # flush the starting stuff
+        # Loop until we get meaningful answers
         success = False
         while not success:
             try:
-                output = self.commandS('?987654321')
-                success = output == '987654321'
+                x = str(int(1000000*random.random()))
+                output = self.commandS(f'?{x}', timeout=timeout)
+                success = output == x
                 if not success:
                     print(re.sub('^', '    ', output, re.MULTILINE))
             except Exception as e:
