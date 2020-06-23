@@ -109,7 +109,7 @@ class Trio:
         if self.t:
             self.t.close()
         else:
-            self.t = telnetlib.Telnet()
+            self.t = telnetlib.Telnet(timeout=timeout)
         self.t.open(self.ip, timeout=timeout)
         # flush the starting stuff
         success = False
@@ -175,15 +175,25 @@ class Trio:
         s = self.command(cmd, timeout).decode().replace('\r\n', '\n')
         return s
 
-    def restart(self):
+    def restart(self, wait=True):
         try:
             self.command('EX', timeout=1)
         except Exception as e:
             if not re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\n.*'", str(e.args[0])):
                 raise
-        print("Restarting... May take up to 30sec")
-        self.connect(timeout=60)
-        print("Restarted")
+        print("Restarting (may take up to 30sec).", end='', flush=True)
+        if wait:
+            for _ in range(30):
+                try:
+                    self.connect(timeout=1)
+                    break
+                except:
+                    print('.', end='', flush=True)
+                    pass
+            print("Restarted")
+        else:
+            print()
+
 
     def halt(self):
         try:

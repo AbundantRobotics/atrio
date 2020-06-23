@@ -18,7 +18,9 @@ def construct_workspace(args):
 
 def controller_cmd(args):
     t = construct_trio(args)
-    print(t.commandS(' '.join(args.command)))
+    output = t.commandS(' '.join(args.command))
+    if output:
+        print(output)
 
 
 def controller_list(args):
@@ -33,7 +35,7 @@ def controller_show(args):
 
 def controller_restart(args):
     t = construct_trio(args)
-    return t.restart()
+    return t.restart(wait=not args.no_wait)
 
 
 def controller_halt(args):
@@ -88,6 +90,7 @@ def main():
     show_parser.set_defaults(func=controller_show)
 
     restart_parser = subparsers.add_parser('restart', help="Restart the controller (special call to EX)")
+    restart_parser.add_argument('--no-wait', action='store_true', help="Do not wait for the controller to come back online")
     restart_parser.set_defaults(func=controller_restart)
 
     halt_parser = subparsers.add_parser('halt', help="Halt programs in the controller ensuring communication channel is clean")
