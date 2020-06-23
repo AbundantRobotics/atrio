@@ -115,11 +115,12 @@ class Trio:
         success = False
         while not success:
             try:
-                success = self.commandS('?987654321') == '987654321'
-            except:
-                pass
-            if not success:
-                print("Extra telnet output found, trying to clear it")
+                output = self.commandS('?987654321')
+                success = output == '987654321'
+                if not success:
+                    print(re.sub('^', '    ', output, re.MULTILINE))
+            except Exception as e:
+                print(e)
 
     def __init__(self, ip, trace : bool=False):
         self.t = None
@@ -141,9 +142,11 @@ class Trio:
             self.t.close()
         return False
 
+    def decode(self, trio_str):
+        return trio_str.decode().replace('\r\n', '\n').replace('\r', '\n')
+
     def command(self, cmd : str, timeout : float=30):
         cmd = cmd.encode('ascii')
-        self.t.read_very_eager() # try to recover from past errors
         self.t.write(cmd + b'\r\n')
         if self.trace:
             print('-> ', cmd + b'\r\n')
@@ -153,13 +156,16 @@ class Trio:
         if self.trace:
             print('<- ', answer)
         if not answer:
-            raise Exception("Trio {} (cmd: {}) doesn't respond".format(self.name, repr(cmd)))
-        resp = b'(.*?)\r\n(.*)>>\nControl char : (.*)\r\n>>'
+            raise Exception("No response to {}".format(repr(cmd)))
+        resp = b'(.*?)' + re.escape(cmd) + b'\r\n(.*)>>\nControl char : (.*)\r\n>>'
         r = re.match(resp, answer, re.MULTILINE | re.DOTALL)
         if not r:
-            raise Exception("Trio {} (cmd: {}) Cannot parse answer: {}".format(self.name, repr(cmd), answer))
-        if r.group(1) != cmd:
-            raise Exception("Expected echo of command, got: {}".format(r.group(1)))
+            raise Exception("Cannot parse answer to {}: {}".format(repr(cmd), answer))
+
+        # We have extra output before our command, let's display it
+        if r.group(1):
+            print('    ', self.decode(r.group(1)).replace('\n', '\n    '), sep='')
+
         err = re.match(b'.*%(\[[^\n]+)\r', r.group(2), re.MULTILINE | re.DOTALL)
         if err:
             raise Exception("Command Error {}".format(err.group(1)))
@@ -179,7 +185,7 @@ class Trio:
         try:
             self.command('EX', timeout=1)
         except Exception as e:
-            if not re.match(r".*\(cmd: b'EX'\) Cannot parse answer: b'EX\\r\\n.*'", str(e.args[0])):
+            if not re.match(r"Cannot parse answer to b'EX': b'EX\\r\\n.*'", str(e.args[0])):
                 raise
         print("Restarting (may take up to 30sec).", end='', flush=True)
         if wait:
