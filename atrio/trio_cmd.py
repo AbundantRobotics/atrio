@@ -73,7 +73,15 @@ def ws_check(args):
 def ws_upload(args):
     ws = construct_workspace(args)
     ws.load(args.wsfile)
-    return ws.write_to_controller(clear=args.clear)
+    for i in range(args.retry + 1):
+        if i:
+            print(f"Retrying({i}) to upload")
+        try:
+            rst_needed = ws.write_to_controller(clear=args.clear, auto_restart=not args.no_auto_restart)
+            return 10 if rst_needed else 0
+        except Exception as e:
+            print(e)
+            pass
 
 
 def ws_download(args):
@@ -145,6 +153,12 @@ def main():
     ws_upload_parser = ws_sub_parsers.add_parser('upload', help="Upload workspace to the controller")
     ws_upload_parser.add_argument('--clear', action="store_true",
                                   help="Start from scratch removing everything in the controller first")
+    ws_upload_parser.add_argument('--no-auto-restart', action="store_true",
+                                  help="Prevent auto restarting when it is considered needed, \n"
+                                  "note that return value will be 10 if restart was considered needed")
+    ws_upload_parser.add_argument('--retry', type=int, default=0,
+                                  help="Retry x number of times in case of failure")
+
     ws_upload_parser.set_defaults(func=ws_upload)
 
     ws_download_parser = ws_sub_parsers.add_parser('download', help="Download changes from the controller")
@@ -161,4 +175,5 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    import sys
+    sys.exit(main())

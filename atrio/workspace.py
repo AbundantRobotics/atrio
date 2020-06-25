@@ -120,6 +120,7 @@ class Workspace:
         """ Write the current workspace to the controller.
         If clear, it will clear everything in the controller before uploading.
         If remove_extra, it will remove extra files in the controller.
+        :returns 0 if nothing changed, 1 if changed, 10 if a restart is considered needed
         """
         self.trio.halt()  # Trio will fail when there are running progs and we write some
         if clear:
@@ -167,7 +168,7 @@ class Workspace:
         if restart_needed and auto_restart:
             self.trio.restart()
 
-        return 1 if restart_needed else 2
+        return 10 if restart_needed else 1
 
 
     def check_controller_filecontent(self, filename):
