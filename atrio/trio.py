@@ -1,13 +1,15 @@
 import re
 import telnetlib
-import socket
 import atexit
 import time
+import enum
 import random
 random.seed()
 from pathlib import Path
 
-import yaml
+
+class AtrioError(Exception):
+    pass
 
 
 program_types = {
@@ -80,7 +82,32 @@ def program_from_filename(filename, allow_progname=False):
     return p.stem.upper(), t
 
 
+class SystemError(enum.Flag):
+    RamError = 0x000001
+    BatteryError = 0x000002
+    InvalidModuleError = 0x000004
+    VrTableCorruptEntry = 0x000008
+    MC_CONFIGError = 0x000010
+    WatchdogTripError = 0x000020
+    FPGAError = 0x000040
+    FlashMemoryError = 0x000080
+    UnitError = 0x000100
+    StationError = 0x000200
+    IOConfigurationError = 0x000400
+    AxesConfigurationError = 0x000800
+    UnitLost = 0x010000
+    UnitTerminatorLost = 0x020000
+    UnitStationLost = 0x040000
+    InvalidUnitError = 0x080000
+    UnitStationError = 0x100000
+    ProcessorException = 0x01000000
+    RFIDCircuitIdentificationError = 0x02000000
 
+class EthercatState(enum.Enum):
+    Initial = 0
+    PreOprational = 1
+    SafeOperational = 2
+    Operational = 3
 
 import crcmod
 trioCRC16 = crcmod.Crc(0x18005, initCrc=0, rev=False, xorOut=0)
@@ -122,8 +149,9 @@ class Trio:
                 success = output == x
                 if not success:
                     print(re.sub('^', '    ', output, re.MULTILINE))
-            except Exception as e:
-                print(e)
+            except AtrioError:
+                pass
+
 
     def __init__(self, ip, trace : bool=False):
         self.t = None
@@ -146,7 +174,10 @@ class Trio:
         return False
 
     def decode(self, trio_str):
-        return trio_str.decode().replace('\r\n', '\n').replace('\r', '\n')
+        return trio_str.decode(errors="ignore").replace('\r\n', '\n').replace('\r', '\n')
+
+    def print_extra_output(self, bytes):
+        print('    ', self.decode(bytes).replace('\n', '\n    '), sep='')
 
     def command(self, cmd : str, timeout : float=30):
         cmd = cmd.encode('ascii')
@@ -154,52 +185,58 @@ class Trio:
         if self.trace:
             print('-> ', cmd + b'\r\n')
 
-        end_re = re.compile(b"Control char : (.*)\r\n>>", re.MULTILINE)
-        (_, _, answer) = self.t.expect([end_re], timeout)
+        resp = b'(.*?)' + re.escape(cmd) + b'\r\n(.*)>>\nControl char : ((?-s:.*))\r\n>>'
+
+        end_re = re.compile(resp, re.MULTILINE | re.DOTALL)
+        (_, r, answer) = self.t.expect([end_re], timeout)
         if self.trace:
             print('<- ', answer)
         if not answer:
-            raise Exception("No response to {}".format(repr(cmd)))
-        resp = b'(.*?)' + re.escape(cmd) + b'\r\n(.*)>>\nControl char : (.*)\r\n>>'
-        r = re.match(resp, answer, re.MULTILINE | re.DOTALL)
+            raise AtrioError("No response to {}".format(repr(cmd)))
         if not r:
-            raise Exception("Cannot parse answer to {}: {}".format(repr(cmd), answer))
+            self.print_extra_output(answer)
+            raise AtrioError("Cannot parse answer to {}: {}".format(repr(cmd), answer))
 
         # We have extra output before our command, let's display it
         if r.group(1):
-            print('    ', self.decode(r.group(1)).replace('\n', '\n    '), sep='')
+            self.print_extra_output(r.group(1))
 
         err = re.match(b'.*%(\[[^\n]+)\r', r.group(2), re.MULTILINE | re.DOTALL)
         if err:
-            raise Exception("Command Error {}".format(err.group(1)))
+            raise AtrioError("Command Error {}".format(err.group(1)))
         if r.group(3) != b'0x10000000A':
-            raise Exception("Trio {} (cmd: {}) bad return code: {}".format(self.name, repr(cmd), r.group(3)))
+            raise AtrioError("Trio {} (cmd: {}) bad return code: {}".format(self.name, repr(cmd), r.group(3)))
         return re.sub(b'\r\n$', b'', r.group(2))  # Remove ending \r\n if answer is not empty
 
     def commandI(self, cmd, timeout=30):
         return int(self.command(cmd, timeout))
 
+    def commandF(self, cmd, timeout=30):
+        return float(self.command(cmd, timeout))
+
     def commandS(self, cmd, timeout=30):
         """ Execute command and return the result as a string. """
-        s = self.command(cmd, timeout).decode().replace('\r\n', '\n')
+        s = self.decode(self.command(cmd, timeout))
         return s
 
     def restart(self, wait=True):
         try:
             self.command('EX', timeout=1)
-        except Exception as e:
+        except AtrioError as e:
             if not re.match(r"Cannot parse answer to b'EX': b'EX\\r\\n.*'", str(e.args[0])):
                 raise
-        print("Restarting (may take up to 30sec).", end='', flush=True)
+        print("Restarting (may take up to 30sec)", end='', flush=True)
         if wait:
             for _ in range(30):
                 try:
                     self.connect(timeout=1)
+                    print("Restarted")
                     break
                 except:
                     print('.', end='', flush=True)
                     pass
-            print("Restarted")
+            else:
+                raise AtrioError("Failed to restart")
         else:
             print()
 
@@ -218,27 +255,33 @@ class Trio:
         return self.commandS("LIST \"{}\"".format(progname))
 
     def write_program(self, progname, prog_type, lines):
-        self.delete_program(progname)
-        self.command("SELECT {},{}".format(self.quote(progname), prog_type))
-        for (n, l) in enumerate(lines):
-            self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
-        self.command("&M")
-        self.command("!{},z".format(progname))
         try:
+            self.delete_program(progname)
+            self.command("SELECT {},{}".format(self.quote(progname), prog_type))
+            for (n, l) in enumerate(lines):
+                self.command("!{},{}R{}".format(progname, n, l.strip("\n\r")))
+            self.command("!{},M".format(progname))
+            # Try to commit things..
+            self.command("!{},Z".format(progname))
+            for _ in range(60):
+                if self.commandI("?FLASH_STATUS"):
+                    self.command("!{},Z".format(progname))
+                    time.sleep(0.1)
+                else:
+                    break
+            else:
+                raise AtrioError("Flash Status never off, program might be corrupted")
+
             self.commandS("COMPILE", 60) # Compiling is needed to not have strange failures with communication to trio
         except Exception as e:
-            e.args = ("Error compiling {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
+            e.args = ("Error writing {} program: {} ".format(progname, e.args[0]),) + e.args[1:]
             raise
-        #while self.commandI("?FLASH_STATUS"):
-        #    print("Waiting for flash memory")
-        #    time.sleep(0.05)
-
 
     def delete_program(self, progname):
         progname = self.quote(progname)
         if self.commandI("?IS_PROG {}".format(progname)):
             self.command("DEL {}".format(progname))
-
+            self.command("&M") # commit to flash
 
     def download_file(self, filename, with_file_extension=True):
         """ Download a file like TEST.BAS or MC_CONFIG.MCC from the controller.
@@ -249,9 +292,9 @@ class Trio:
             progname, prog_type = program_from_filename(filename)
             r_prog_type = self.commandI("?PROG_TYPE \"{}\"".format(progname))
             if r_prog_type == -1:
-                raise Exception("Controller is missing program {}".format(progname))
+                raise AtrioError("Controller is missing program {}".format(progname))
             if r_prog_type != prog_type:
-                raise Exception("Remote program is of wrong type {}".format(r_prog_type))
+                raise AtrioError("Remote program is of wrong type {}".format(r_prog_type))
         else:
             progname = Path(filename).name
             progname.upper()
@@ -272,7 +315,7 @@ class Trio:
         for line in progtable.splitlines():
             m = re.match(progtable_regex, line)
             if not m:
-                raise Exception("Could not parse dir line: " + line)
+                raise AtrioError("Could not parse dir line: " + line)
             r[m.group('progname')] = m.groupdict()
         return r
 
@@ -296,7 +339,7 @@ class Trio:
     def autorun_program(self, progname, prog_type, process):
         """ Process -1 is automatic process selection, None removes the autorun"""
         if prog_type != 0:
-            return  # Only programs are autorunable, trio will fail to set no autorun on non autorunable...
+            raise AtrioError(f"Cannot set autorun on non program {progname}")
         prog = self.quote(progname)
         autorun = process is not None
         if autorun:
@@ -305,190 +348,32 @@ class Trio:
             self.command("RUNTYPE{},{},{}".format(prog, 0, -1))
 
 
+    def system_error(self):
+        return SystemError(self.commandI("?SYSTEM_ERROR"))
 
-class Workspace:
-    """ Workspace yaml file is 2 parts:
-    controller:
-      checksum: <checksum value>
-    files:
-      - { filename: <progname>, autorun: <autorun> }
-      - <...>
-    """
-    def __init__(self, trio):
-        self.trio = trio
-        self.ws = None
-        self.wsfiledir = Path()
+    def system_load(self):
+        """ Returns the max system load in percent since previous call or since powerup.
+         System load is the load associated to the trio system excluding user programs,
+         It should be bellow 50% according to trio help."""
+        load_percent = self.commandF("?SYSTEM_LOAD_MAX")
+        self.command("SYSTEM_LOAD_MAX=0")
+        return load_percent
 
-    def save(self, wsfile):
-        with open(wsfile, 'w') as f:
-            yaml.dump(self.ws, f)
-
-    def load(self, wsfile):
-        with open(wsfile) as f:
-            self.ws = yaml.load(f, Loader=yaml.Loader)
-            self.wsfiledir = Path(wsfile).parent
-
-    def entry_from_list_file(self, folder, ll):
-        """ Workspace entry from a file listing entry from trio.list_files() """
-        filename = folder + '/' + ll['progname'] + extension_from_code_type(ll['codetype'])
-        return {'filename': filename, 'autorun': ll['autorun']}
-
-    def load_controller(self, folder='.'):
-        """ Create a workspace to match the controller one """
-        files = []
-        for ll in self.trio.list_files().values():
-            files.append(self.entry_from_list_file(folder, ll))
-        self.ws = {
-            'files': files
-        }
-
-    def new_from_controller(self, wsfile, folder=None):
-        """ Create a workspace from the controller content.
-        Save the workspace file as wsfile, and the programs in folder.
-        If folder is not given, puts the programs in the same folder as the workspace.
-        If delete then clears the folder.
-        """
-        if folder is None:
-            d = Path(wsfile).parent
-        else:
-            d = Path(folder)
-        if not d.exists():
-            d.mkdir(parents=True)
-
-        d = d.relative_to(Path(wsfile).parent)
-
-        self.load_controller(str(d))
-
-        for f in self.ws.get('files', []):
-            self.trio.download_file(f['filename'])
-
-        self.save(wsfile)
-
-    def update_from_controller(self, wsfile, interactive=False):
-        """ Update the programs of the workspace """
-        if interactive:
-            def prompt(msg):
-                r = input(msg + " Y/n?\n")
-                return (r == '' or r == 'Y' or r == 'y')
-        else:
-            def prompt(msg):
-                print(msg)
-                return True
-
-        self.load(wsfile)
-
-        cfiles = self.trio.list_files()
-
-        new_files = []
-
-        for f in list(self.ws.get('files', [])):
-            filename = f['filename']
-            progname, prog_type = program_from_filename(f['filename'])
-            autorun = f.get('autorun', None)
-
-            if progname not in cfiles:
-                print('File {} removed from the controller.'.format(filename))
-                if prompt('Remove from workspace'):
-                    Path(filename).unlink()
-                continue
-
-            if not self.check_controller_filecontent(filename):
-                print('File {} is different'.format(filename))
-                if prompt("Download form controller"):
-                    self.trio.download_file(filename)
-
-            if str(cfiles[progname]['autorun']) != str(autorun):
-                print('File {} has different autorun'.format(filename))
-                if prompt('Updating it'):
-                    f['autorun'] = cfiles[progname]['autorun']
-
-            new_files.append(f)
-            cfiles.pop(progname)
-
-        if cfiles:
-            if prompt("Download extra files from controller"):
-                for cf in cfiles.values():
-                    new_file = self.entry_from_list_file('.', cf)
-                    if prompt("Downloading new file {}".format(cf['progname'])):
-                        self.trio.download_file(new_file['filename'])
-                        new_files.append(new_file)
-
-        self.ws['files'] = new_files
-
-        self.save(wsfile)
+    def process_load(self):
+        return self.commandS("PROCESS")
 
 
-    def write_to_controller(self, clear=False):
-        """ Write the current workspace to the controller.
-        If clear, it will clear everything in the controller before uploading.
-        """
-        if self.ws is None:
-            raise Exception("Trying to write empty workspace to controller.")
-        self.trio.halt()  # Trio will fail when there are running progs and we write some
-        if clear:
-            self.trio.commandS('NEW "ALL"')
-            #for f in self.trio.list_files():
-            #    self.trio.delete_program(f)
+    def ethercat_list(self):
+        return self.commandS("ETHERCAT($87,0)")
 
-        for f in self.ws.get('files', []):
-            filename = self.wsfiledir / f['filename']
-            if not self.check_controller_filecontent(filename):
-                print("Updating {}".format(filename))
-                self.trio.upload_file(filename)
-                progname, prog_type = program_from_filename(filename)
-                self.trio.autorun_program(progname, prog_type, f.get('autorun', None))
-                if prog_type == program_types['.MCC']:
-                    print("MC_CONFIG.MCC got updated, restarting the controller")
-                    self.trio.restart()
+    def ethercat_state(self):
+        return EthercatState(self.commandI("ETHERCAT($22,0,-1)")).name
 
+    def ethercat_set_state(self, state : EthercatState):
+        return self.commandS(f"ETHERCAT($21, 0, {state.value}, 0) ")
 
-    def check_controller_filecontent(self, filename):
-        """ Check that a file is the same as in the controller (using checksum).
-        """
-        fcrc = crc_file(filename)
-        progname, prog_type = program_from_filename(filename)
-        try:
-            ccrc = self.trio.checksum_program(progname)
-            return fcrc == ccrc
-        except Exception:
-            return False
+    def ethercat_start(self):
+        return self.commandS("ETHERCAT(0, 0)")
 
-    def check_controller_filelist(self, check_extra=False):
-        if self.ws is None:
-            raise Exception("Workspace is empty, please load a workspace.")
-
-        r = False
-
-        cfiles = self.trio.list_files()
-        extras = set(cfiles.keys())
-
-        for f in self.ws.get('files', []):
-            filename = self.wsfiledir / f['filename']
-            progname, prog_type = program_from_filename(filename)
-            if progname not in cfiles:
-                print("File {} is missing in the controller".format(progname))
-                r = True
-            else:
-                ll = cfiles[progname]
-                cprog_type = program_types.get(extension_from_code_type(ll['codetype']))
-                if prog_type != cprog_type:
-                    print("File {} is of wrong type in the controller".format(progname))
-                    r = True
-                if not self.check_controller_filecontent(filename):
-                    print("File {} content is different in the controller".format(progname))
-                    r = True
-                if str(ll['autorun']) != str(f.get('autorun', None)):
-                    print("File {} autorun state is different in the controller".format(progname))
-                extras.remove(progname)
-
-        if extras:
-            print("Extra files are in the controller ({})".format(', '.join(extras)))
-            if check_extra:
-                r = True
-
-        return r
-
-    def download_all(self):
-        for f in self.ws.get('files', []):
-            self.trio.download_file(self.wsfiledir / f['filename'])
-
+    def ethercat_stop(self):
+        return self.commandS("ETHERCAT(1, 0)")

@@ -23,9 +23,24 @@ def controller_cmd(args):
         print(output)
 
 
-def controller_list(args):
+def controller_ls(args):
     t = construct_trio(args)
     return atrio.prettyprint_progtable(t.list_files())
+
+def controller_top(args):
+    t = construct_trio(args)
+    print(t.process_load())
+
+def controller_ethercat(args):
+    t = construct_trio(args)
+    print(getattr(t, 'ethercat_' + args.subfunc)())
+
+def controller_ethercat_set(args):
+    t = construct_trio(args)
+    s = atrio.EthercatState[args.state]
+    t.ethercat_set_state(s)
+    print(t.ethercat_list())
+
 
 
 def controller_show(args):
@@ -51,13 +66,14 @@ def ws_create(args):
 def ws_check(args):
     ws = construct_workspace(args)
     ws.load(args.wsfile)
-    return ws.check_controller_filelist(check_extra=args.check_extra)
+    diff = ws.controller_diff()
+    return ws.summarize_diff(diff, print_summary=True, ignore_extras=args.no_extra, print_diff=not args.no_diff)
 
 
 def ws_upload(args):
     ws = construct_workspace(args)
     ws.load(args.wsfile)
-    return ws.write_to_controller(args.clear)
+    return ws.write_to_controller(clear=args.clear)
 
 
 def ws_download(args):
@@ -82,8 +98,21 @@ def main():
     cmd_parser.add_argument('command', type=str, nargs='+', help="Command to give to the drive")
     cmd_parser.set_defaults(func=controller_cmd)
 
-    list_parser = subparsers.add_parser('list', help="List files in the controller")
-    list_parser.set_defaults(func=controller_list)
+    ls_parser = subparsers.add_parser('ls', help="List files in the controller")
+    ls_parser.set_defaults(func=controller_ls)
+
+    top_parser = subparsers.add_parser('top', help="List process and cpu usage in the controller")
+    top_parser.set_defaults(func=controller_top)
+
+    ethercat_parser = subparsers.add_parser('ethercat', help="trio ethercat commands")
+    ethercat_subparsers = ethercat_parser.add_subparsers()
+    for f in ["list", "state", "start", "stop"]:
+        sp = ethercat_subparsers.add_parser(f)
+        sp.set_defaults(subfunc=f)
+        sp.set_defaults(func=controller_ethercat)
+    ethercat_set_parser = ethercat_subparsers.add_parser("set_state", help='Change ethercat status')
+    ethercat_set_parser.add_argument("state", choices=[str(s.name) for s in atrio.EthercatState])
+    ethercat_set_parser.set_defaults(func=controller_ethercat_set)
 
     show_parser = subparsers.add_parser('show', help="Display a file from the controller")
     show_parser.add_argument('progname', type=str, help="Programe name to show")
@@ -107,8 +136,10 @@ def main():
     ws_create_parser.set_defaults(func=ws_create)
 
     ws_check_parser = ws_sub_parsers.add_parser('check', help="Check workspace is in sync with the controller")
-    ws_check_parser.add_argument('--check_extra', action="store_true",
-                                 help="Check for extra files in the controller")
+    ws_check_parser.add_argument('--no-extra', action="store_true",
+                                 help="Do not check for extra files in the controller")
+    ws_check_parser.add_argument('--no-diff', action="store_true",
+                                 help="Do not print full diff of files")
     ws_check_parser.set_defaults(func=ws_check)
 
     ws_upload_parser = ws_sub_parsers.add_parser('upload', help="Upload workspace to the controller")
