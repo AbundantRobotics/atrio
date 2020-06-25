@@ -134,23 +134,30 @@ class Trio:
     or can be used in a contextmanager (`with`)
     """
 
-    def connect(self, timeout=1):
+    def connect(self, timeout=1, retry=3):
         if self.t:
             self.t.close()
         else:
             self.t = telnetlib.Telnet(timeout=timeout)
         self.t.open(self.ip, timeout=timeout)
-        # Loop until we get meaningful answers
-        success = False
-        while not success:
+        for _ in range(retry + 1):
             try:
                 x = str(int(1000000*random.random()))
                 output = self.commandS(f'?{x}', timeout=timeout)
-                success = output == x
-                if not success:
+                if output != x:
                     print(re.sub('^', '    ', output, re.MULTILINE))
+                else:
+                    break
             except AtrioError:
                 pass
+        else:
+            raise AtrioError("Could not connect: Motion Perfect probably open?")
+
+        if self.commandI("?MPE") != 0:
+            raise AtrioError("Motion Perfect probably open (MPE != 0)")
+
+
+
 
 
     def __init__(self, ip, trace : bool=False):
