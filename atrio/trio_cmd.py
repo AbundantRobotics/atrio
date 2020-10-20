@@ -114,7 +114,7 @@ def main():
 
     ethercat_parser = subparsers.add_parser('ethercat', help="trio ethercat commands")
     ethercat_subparsers = ethercat_parser.add_subparsers()
-    for f in ["list", "state", "start", "stop"]:
+    for f in ["list", "state", "reinitialize", "start", "stop"]:
         sp = ethercat_subparsers.add_parser(f)
         sp.set_defaults(subfunc=f)
         sp.set_defaults(func=controller_ethercat)
