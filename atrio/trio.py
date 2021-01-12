@@ -238,6 +238,7 @@ class Trio:
                 try:
                     self.connect(timeout=1)
                     print("Restarted")
+                    print(self.commandS("AUTORUN"))
                     break
                 except:
                     print('.', end='', flush=True)
