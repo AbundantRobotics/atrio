@@ -208,7 +208,7 @@ class Trio:
         if r.group(1):
             self.print_extra_output(r.group(1))
 
-        err = re.match(b'.*%(\[[^\n]+)\r', r.group(2), re.MULTILINE | re.DOTALL)
+        err = re.match(b'.*%(\[COMMAND[^\n]+)\r', r.group(2), re.MULTILINE | re.DOTALL)
         if err:
             raise AtrioError("Command Error {}".format(err.group(1)))
         if r.group(3) != b'0x10000000A':
