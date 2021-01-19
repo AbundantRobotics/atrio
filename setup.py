@@ -14,12 +14,12 @@ setuptools.setup(
     url="https://github.com/AbundantRobotics/atrio",
     packages=setuptools.find_packages(),
     install_requires=[
-        "argparse~=1.4.0",
-        "argcomplete~=1.11.1",
+        "argparse~=1.4",
+        "argcomplete~=1.11",
         "crcmod~=1.7",
-        "pytest~=5.4.1",
-        "PyYAML~=5.3.1",
-        "setuptools~=46.1.3",
+        "pytest~=5.4",
+        "PyYAML~=5.3",
+        "setuptools~=46.1",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
