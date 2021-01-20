@@ -13,12 +13,12 @@ class AtrioError(Exception):
 
 
 program_types = {
-    ".BAS": 0,
-    ".TXT": 3,
-    ".MCC": 9,
-    ".BAL": 12,
+    ".BAS": 0,  # Program type
+    ".TXT": 3,  # Text type
+    ".MCC": 9,  # MC_CONFIG
+    ".BAL": 12,  # Basic library
+    ".PROJ": 7,  # Project type
 }
-
 
 def extension_from_prog_type(prog_type):
     """ Returns file extension from a trio prog_type """
@@ -29,7 +29,8 @@ code_types = {
     "Normal": ".BAS",
     "BASIC Lib": ".BAL",
     "Text": ".TXT",
-    "MC_CONFIG": ".MCC"
+    "MC_CONFIG": ".MCC",
+    "Project": ".PROJ"
 }
 
 
@@ -262,7 +263,11 @@ class Trio:
     def read_program(self, progname):
         return self.commandS("LIST \"{}\"".format(progname))
 
-    def write_program(self, progname, prog_type, lines):
+    def write_program(self, progname, prog_type=None, lines=None):
+        if prog_type is None:
+            prog_type = program_types['.BAS']
+        if not lines:
+            lines = ['']
         try:
             self.delete_program(progname)
             self.command("SELECT {},{}".format(self.quote(progname), prog_type))
@@ -274,7 +279,7 @@ class Trio:
             for _ in range(60):
                 if self.commandI("?FLASH_STATUS"):
                     self.command("!{},Z".format(progname))
-                    time.sleep(0.1)
+                    time.sleep(0.03)
                 else:
                     break
             else:
@@ -344,10 +349,8 @@ class Trio:
     def checksum_program(self, progname):
         return self.commandI("EDPROG{},10".format(self.quote(progname)))
 
-    def autorun_program(self, progname, prog_type, process):
+    def autorun_program(self, progname, process):
         """ Process -1 is automatic process selection, None removes the autorun"""
-        if prog_type != 0:
-            raise AtrioError(f"Cannot set autorun on non program {progname}")
         prog = self.quote(progname)
         autorun = process is not None
         if autorun:

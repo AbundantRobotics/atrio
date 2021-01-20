@@ -160,7 +160,9 @@ class Workspace:
                     update_autorun = True
 
             if update_autorun or filename in cdiff["autorun_changed"]:
-                self.trio.autorun_program(progname, prog_type, autorun)
+                if prog_type != 0:
+                    raise AtrioError(f"Cannot set autorun on non BAS program {progname}")
+                self.trio.autorun_program(progname, autorun)
                 if autorun:
                     print(f"Restart needed to autorun {filename}")
                     restart_needed = True
