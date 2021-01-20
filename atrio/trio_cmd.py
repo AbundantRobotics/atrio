@@ -25,7 +25,7 @@ def controller_cmd(args):
 
 def controller_ls(args):
     t = construct_trio(args)
-    return atrio.prettyprint_progtable(t.list_files())
+    return atrio.prettyprint_progtable(t.list_files(), args.lsall)
 
 def controller_top(args):
     t = construct_trio(args)
@@ -108,6 +108,7 @@ def main():
 
     ls_parser = subparsers.add_parser('ls', help="List files in the controller")
     ls_parser.set_defaults(func=controller_ls)
+    ls_parser.add_argument('--lsall', '-a', action='store_true', help="Display all files including projetc files")
 
     top_parser = subparsers.add_parser('top', help="List process and cpu usage in the controller")
     top_parser.set_defaults(func=controller_top)

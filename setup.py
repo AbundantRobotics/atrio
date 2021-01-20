@@ -18,7 +18,7 @@ setuptools.setup(
         "argcomplete~=1.11",
         "crcmod~=1.7",
         "pytest~=5.4",
-        "PyYAML~=5.3",
+        "PyYAML>=3",
         "setuptools~=46.1",
     ],
     classifiers=[
