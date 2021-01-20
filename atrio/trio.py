@@ -59,8 +59,10 @@ progtable_regex = \
     )
 
 
-def prettyprint_progtable(list_files):
+def prettyprint_progtable(list_files, all=False):
     for k in list_files.values():
+        if k['codetype'] == "Project" and not all:
+            continue
         autorun = k.get('autorun', None)
         if autorun:
             autorunstr = " ({})".format(autorun)
