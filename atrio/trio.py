@@ -389,7 +389,7 @@ class Trio:
         return self.commandS("ETHERCAT(0, 0)")
 
     def ethercat_start(self):
-        return self.ethercat_state(EthercatState.Operational)
+        return self.ethercat_set_state(EthercatState.Operational)
 
     def ethercat_stop(self):
         return self.commandS("ETHERCAT(1, 0)")
